@@ -9,6 +9,7 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+from apiclient import errors
 
 # If modifying these scopes, delete the file token.json.
 SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
@@ -48,6 +49,24 @@ def get_subject(service, email_id):
             subject = d['value']
     return subject
 
+def download_attachments(service, email_id, destination_folder = "./attachments"):
+    try:
+        payload = get_payload(service, email_id)
+        for part in payload.get('parts'):
+            if part['filename']:
+                if 'data' not in part['body']:
+                    attachment_id = part['body']['attachmentId']
+                    attachment = service.users().messages().attachments().get(userId='me', messageId=email_id,id=attachment_id).execute()
+                    data = attachment['data']
+        file_data = base64.urlsafe_b64decode(data.encode('UTF-8'))
+        path = f"./attachments/{part['filename']}"
+
+        with open(path, 'wb') as f:
+            f.write(file_data)
+
+    except errors.HttpError as error:
+        print(f'An error occurred: {error}')
+
 def get_message(service, email_id):
     try:
         payload = get_payload(service, email_id)
@@ -65,7 +84,8 @@ def main():
     creds = authenticate()
     try:
         service = build('gmail', 'v1', credentials=creds)
-        results = service.users().messages().list(userId='me').execute()
+        results = service.users().messages().list(userId='me', 
+            q=f'from:no-reply@ccee.org.br after:2022/12/13').execute()
         email_ids = [message.get('id') for message in results.get('messages', [])]
         for email_id in email_ids:
             subject = get_subject(service, email_id)
@@ -73,6 +93,8 @@ def main():
             print(f'Subject: {subject}')
             print(f'Message: {message}')
             print('\n')
+
+            download_attachments(service, email_id)
 
     except HttpError as error:
         print(f'An error occurred: {error}')
